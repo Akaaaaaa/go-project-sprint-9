@@ -14,6 +14,8 @@ import (
 // вызывается функция fn. Она служит для подсчёта количества и суммы
 // сгенерированных чисел.
 func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
+	// 1. Функция Generator
+	// ...
 	var i int64 = 1
 	for {
 		select {
@@ -29,17 +31,20 @@ func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 
 // Worker читает число из канала in и пишет его в канал out.
 func Worker(in <-chan int64, out chan<- int64) {
+	// 2. Функция Worker
 	for v := range in {
 		out <- v
-		time.Sleep(time.Millisecond) // пауза на 1 миллисекунду
+		time.Sleep(1 * time.Millisecond)
 	}
 	close(out)
+	// ...
 }
 
 func main() {
 	chIn := make(chan int64)
 
-	// Создаем контекст с таймаутом на 1 секунду
+	// 3. Создание контекста
+	// ...
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -48,10 +53,9 @@ func main() {
 	var inputCount int64 // количество сгенерированных чисел
 
 	// генерируем числа, считая параллельно их количество и сумму
-	// Используем атомарные операции для избежания гонки данных
 	go Generator(ctx, chIn, func(i int64) {
-		atomic.AddInt64(&inputSum, i)
-		atomic.AddInt64(&inputCount, 1)
+		inputSum += i
+		inputCount++
 	})
 
 	const NumOut = 5 // количество обрабатывающих горутин и каналов
@@ -71,18 +75,16 @@ func main() {
 	var wg sync.WaitGroup
 
 	// 4. Собираем числа из каналов outs
+	// ...
 	for i := 0; i < NumOut; i++ {
 		wg.Add(1)
-		idx := i
-		ch := outs[i]
-
-		go func() {
+		go func(in <-chan int64, i int64) {
 			defer wg.Done()
-			for v := range ch {
-				amounts[idx]++
+			for v := range in {
 				chOut <- v
+				amounts[i]++
 			}
-		}()
+		}(outs[i], int64(i))
 	}
 
 	go func() {
@@ -96,6 +98,7 @@ func main() {
 	var sum int64   // сумма чисел результирующего канала
 
 	// 5. Читаем числа из результирующего канала
+	// ...
 	for v := range chOut {
 		count++
 		sum += v
@@ -107,17 +110,17 @@ func main() {
 
 	// проверка результатов
 	if atomic.LoadInt64(&inputSum) != sum {
-		log.Fatalf("Ошибка: суммы чисел не равны: %d != %d\n", atomic.LoadInt64(&inputSum), sum)
+		log.Fatalf("Ошибка: суммы чисел не равны: %d != %d\n", inputSum, sum)
 	}
 	if atomic.LoadInt64(&inputCount) != count {
-		log.Fatalf("Ошибка: количество чисел не равно: %d != %d\n", atomic.LoadInt64(&inputCount), count)
+		log.Fatalf("Ошибка: количество чисел не равно: %d != %d\n", inputCount, count)
 	}
 
-	remaining := atomic.LoadInt64(&inputCount)
+	rem := atomic.LoadInt64(&inputCount)
 	for _, v := range amounts {
-		remaining -= v
+		rem -= v
 	}
-	if remaining != 0 {
-		log.Fatalf("Ошибка: разделение чисел по каналам неверное, остаток: %d\n", remaining)
+	if rem != 0 {
+		log.Fatalf("Ошибка: разделение чисел по каналам неверное\n")
 	}
 }
